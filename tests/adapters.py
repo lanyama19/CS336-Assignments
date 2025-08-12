@@ -8,6 +8,7 @@ from jaxtyping import Float, Int
 import numpy.typing as npt
 import torch
 from torch import Tensor
+from train_bpe import train_bpe_parallel
 
 
 def run_linear(
@@ -589,4 +590,22 @@ def run_train_bpe(
                 representing that <token1> was merged with <token2>.
                 Merges are ordered by order of creation.
     """
-    raise NotImplementedError
+    # Check if dataset is small to disable multiprocessing
+    try:
+        file_size = os.path.getsize(input_path)
+        # If file is smaller than 1MB, use single process
+        if file_size < 1024 * 1024:  # 1MB threshold
+            kwargs['workers'] = 1
+    except (OSError, IOError):
+        # If we can't get file size, proceed with default settings
+        pass
+    
+    # Use train_bpe_parallel from train_bpe module
+    vocab, merges = train_bpe_parallel(
+        input_path=str(input_path),
+        vocab_size=vocab_size,
+        special_tokens=special_tokens,
+        **kwargs
+    )
+
+    return vocab, merges
