@@ -161,27 +161,29 @@ class Tokenizer:
         return tokens[:i] + [token1 + token2] + tokens[i+2:]
     
     def encode(self, text: str) -> List[int]:
-        """Encode text into token ids.
-
-        If special tokens were provided, split greedily on them first (preserving
-        them as atomic units), then encode the remaining text parts via BPE.
-        """
+        """Encode text into token ids, handling specials and BPE in one pass."""
         if not text:
             return []
 
+        token_ids: List[int] = []
         if self.special_token_to_id:
-            parts = self._split_on_special_tokens(text)
-            return self._encode_parts(parts)
+            for part_type, content in self._split_on_special_tokens(text):
+                if part_type == 'special':
+                    token_ids.append(self.special_token_to_id[content])
+                else:
+                    for pre_token in self._pre_tokenize(content):
+                        token_ids.extend(self._encode_pre_token(pre_token))
+            return token_ids
 
-        return self._encode_text(text)
+        for pre_token in self._pre_tokenize(text):
+            token_ids.extend(self._encode_pre_token(pre_token))
+        return token_ids
     
     def _split_on_special_tokens(self, text: str) -> List[Tuple[str, str]]:
         """Greedy left-to-right longest-match split on special tokens.
-
         # CHANGED: Rewrote splitting to greedy longest-match to correctly
         # handle overlapping specials (e.g., "<|eot|><|eot|>") and preserve
         # special tokens atomically without being merged/split.
-        
         Returns a list of tagged parts: ('text', segment) or ('special', token).
         Overlapping patterns are resolved by always picking the longest match first.
         """
@@ -214,24 +216,7 @@ class Tokenizer:
         if acc_start < n:
             parts.append(('text', text[acc_start:]))
         return parts
-    
-    def _encode_parts(self, parts: List[Tuple[str, str]]) -> List[int]:
-        """Encode a list of ('text'|'special', content) parts into token ids."""
-        token_ids = []
-        for part_type, content in parts:
-            if part_type == 'text':
-                token_ids.extend(self._encode_text(content))
-            else:
-                token_ids.append(self.special_token_to_id[content])
-        return token_ids
-    
-    def _encode_text(self, text: str) -> List[int]:
-        """Encode raw text by pre-tokenizing then byte-level BPE encoding."""
-        token_ids = []
-        for pre_token in self._pre_tokenize(text):
-            token_ids.extend(self._encode_pre_token(pre_token))
-        return token_ids
-    
+
     def encode_iterable(self, iterable: Iterable[str]) -> Iterator[int]:
         """Encode an iterable of strings, yielding token ids.
         # Concatenate the iterable and encode once to ensure exact
